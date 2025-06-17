@@ -1,234 +1,244 @@
-// JavaScript Complet - To-Do List Fonctionnelle avec recherche avancée
-
 document.addEventListener("DOMContentLoaded", () => {
   const taskForm = document.getElementById("taskForm");
   const taskName = document.getElementById("taskName");
   const taskDate = document.getElementById("taskDate");
   const taskPriority = document.getElementById("taskPriority");
   const searchInput = document.getElementById("search");
-  const searchResultsBlock = document.getElementById("searchResults"); // <- corrigé ici
+  const searchResultsBox = document.getElementById("searchResults");
   const searchList = document.querySelector(".search-list");
 
+  const deleteBtn = document.getElementById("deleteSelected");
+  const archiveBtn = document.getElementById("archiveSelected");
+  const unarchiveBtn = document.getElementById("unarchiveSelected");
+
   const confirmBox = document.getElementById("confirm-box");
-  const confirmMessage = document.getElementById("confirm-message");
   const confirmYes = document.getElementById("confirm-yes");
   const confirmNo = document.getElementById("confirm-no");
+  const confirmMsg = document.getElementById("confirm-message");
 
-  const taskSections = {
+  let confirmCallback = null;
+
+  const sections = {
     faible: document.querySelector("#faible .task-list"),
     moyenne: document.querySelector("#moyenne .task-list"),
     élevée: document.querySelector("#élevée .task-list"),
-    archive: document.querySelector("#archive .task-list")
+    archive: document.querySelector("#archive .task-list"),
   };
 
+  let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+
   function saveTasks() {
-    const tasks = [];
-    document.querySelectorAll(".task-item").forEach(task => {
-      tasks.push({
-        name: task.querySelector(".name").value,
-        date: task.querySelector(".date").value,
-        priority: task.dataset.priority,
-        done: task.querySelector(".done-checkbox").checked,
-        archived: task.closest("section").id === "archive"
-      });
-    });
     localStorage.setItem("tasks", JSON.stringify(tasks));
   }
 
-  function loadTasks() {
-    const saved = JSON.parse(localStorage.getItem("tasks")) || [];
-    saved.forEach(task =>
-      createTask(task.name, task.date, task.priority, task.done, task.archived)
-    );
+  function showConfirm(message, callback) {
+    confirmMsg.textContent = message;
+    confirmBox.style.display = "flex";
+    confirmCallback = callback;
   }
 
-  function createTask(name, date, priority, done = false, archived = false) {
+  confirmYes.onclick = () => {
+    confirmBox.style.display = "none";
+    if (confirmCallback) confirmCallback();
+  };
+
+  confirmNo.onclick = () => {
+    confirmBox.style.display = "none";
+  };
+
+  function createTaskElement(task) {
     const li = document.createElement("li");
     li.className = "task-item";
-    li.dataset.priority = priority;
+    if (task.done) li.classList.add("done");
 
-    li.innerHTML = `
-      <label class="task-label">
-        <input type="checkbox" class="done-checkbox" ${done ? "checked" : ""} />
-        <input class="name" value="${name}" />
-        <input type="date" class="date" value="${date}" />
-      </label>
-      <input type="checkbox" class="select-checkbox" title="Sélectionner pour action" />
-    `;
+    const label = document.createElement("label");
+    label.className = "task-label";
 
-    if (done) li.classList.add("done");
+    const doneCheckbox = document.createElement("input");
+    doneCheckbox.type = "checkbox";
+    doneCheckbox.className = "done-checkbox";
+    doneCheckbox.checked = task.done;
 
-    const section = archived ? taskSections.archive : taskSections[priority];
-    section.appendChild(li);
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = task.name;
 
-    li.querySelector('.done-checkbox').addEventListener('change', e => updateTaskStyle(e.target));
-    li.querySelector('.name').addEventListener('input', saveTasks);
-    li.querySelector('.date').addEventListener('input', saveTasks);
+    const dateSpan = document.createElement("span");
+    dateSpan.className = "date";
+    dateSpan.textContent = task.date;
 
-    saveTasks();
-    updateVisibility();
+    label.append(doneCheckbox, nameSpan, dateSpan);
+
+    const selectBox = document.createElement("input");
+    selectBox.type = "checkbox";
+    selectBox.className = "select-checkbox";
+
+    li.append(label, selectBox);
+
+    // Toggle done
+    doneCheckbox.addEventListener("change", () => {
+      task.done = doneCheckbox.checked;
+      render();
+      saveTasks();
+    });
+
+    return li;
   }
 
-  function updateTaskStyle(checkbox) {
-    const task = checkbox.closest(".task-item");
-    task.classList.toggle("done", checkbox.checked);
-    saveTasks();
-  }
+  function render() {
+    Object.values(sections).forEach(ul => (ul.innerHTML = ""));
 
-  function getSelected() {
-    return [...document.querySelectorAll(".task-item .select-checkbox:checked")].map(cb =>
-      cb.closest(".task-item")
-    );
-  }
+    const grouped = {
+      faible: [],
+      moyenne: [],
+      élevée: [],
+      archive: [],
+    };
 
-  function updateVisibility() {
-    document.querySelectorAll(".task-list").forEach(list => {
-      const items = list.querySelectorAll("li");
-      items.forEach((el, i) => {
-        el.style.display = list.classList.contains("show-all") || i === 0 ? "flex" : "none";
+    tasks.forEach(t => grouped[t.archived ? "archive" : t.priority].push(t));
+
+    Object.entries(grouped).forEach(([key, taskArray]) => {
+      const container = sections[key];
+      taskArray.forEach((task, index) => {
+        const el = createTaskElement(task);
+        if (index > 0) el.style.display = "none";
+        container.appendChild(el);
       });
     });
+
+    saveTasks();
   }
 
-  function confirmAction(message, callback) {
-    confirmMessage.textContent = message;
-    confirmBox.style.display = "flex";
-
-    const onYes = () => {
-      confirmBox.style.display = "none";
-      confirmYes.removeEventListener("click", onYes);
-      confirmNo.removeEventListener("click", onNo);
-      callback();
-    };
-
-    const onNo = () => {
-      confirmBox.style.display = "none";
-      confirmYes.removeEventListener("click", onYes);
-      confirmNo.removeEventListener("click", onNo);
-    };
-
-    confirmYes.addEventListener("click", onYes);
-    confirmNo.addEventListener("click", onNo);
-  }
-
+  // Ajouter une tâche
   taskForm.addEventListener("submit", e => {
     e.preventDefault();
     const name = taskName.value.trim();
     const date = taskDate.value;
     const priority = taskPriority.value;
+
     if (!name || !date || !priority) return;
-    createTask(name, date, priority);
-    taskName.value = "";
-    taskDate.value = "";
-    taskPriority.value = "";
+
+    const newTask = {
+      id: Date.now(),
+      name,
+      date,
+      priority,
+      done: false,
+      archived: false,
+    };
+
+    tasks.push(newTask);
+    taskForm.reset();
+    render();
+    saveTasks();
   });
 
+  // Voir tout / Voir moins
   document.querySelectorAll(".toggle-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const list = btn.previousElementSibling;
-      list.classList.toggle("show-all");
-      btn.textContent = list.classList.contains("show-all") ? "Voir moins" : "Voir tout";
-      updateVisibility();
+      const items = list.querySelectorAll(".task-item");
+      const hidden = list.querySelector(".task-item[style*='none']");
+      const allVisible = !hidden;
+
+      items.forEach((item, i) => {
+        if (i > 0) item.style.display = allVisible ? "none" : "flex";
+      });
+
+      btn.textContent = allVisible ? "Voir tout" : "Voir moins";
     });
   });
 
+  // Recherche
   searchInput.addEventListener("input", () => {
-    const query = searchInput.value.trim().toLowerCase();
+    const query = searchInput.value.toLowerCase();
+    searchResultsBox.style.display = query ? "block" : "none";
     searchList.innerHTML = "";
 
-    if (!query) {
-      searchResultsBlock.style.display = "none";
-      return;
-    }
+    if (!query) return;
 
-    const allTasks = Array.from(document.querySelectorAll(".task-item"));
-
-    const results = allTasks
-      .map(task => {
-        const name = task.querySelector(".name").value.toLowerCase();
-        const date = task.querySelector(".date").value;
-        let score = 0;
-
-        if (name.includes(query)) score += 1;
-        if (date.includes(query)) score += 1;
-
-        return { task, score };
-      })
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
+    const matches = tasks
+      .filter(t => t.name.toLowerCase().includes(query) || t.date.includes(query))
       .slice(0, 2);
 
-    if (results.length === 0) {
-      searchResultsBlock.style.display = "none";
-      return;
-    }
-
-    results.forEach(({ task }) => {
-      const clone = task.cloneNode(true);
-      clone.classList.add("search-result");
-      clone.dataset.origin = task.closest("section").id;
-
-      clone.querySelector(".name").addEventListener("input", saveTasks);
-      clone.querySelector(".date").addEventListener("input", saveTasks);
-      clone.querySelector(".done-checkbox").addEventListener("change", (e) => {
-        clone.classList.toggle("done", e.target.checked);
-        saveTasks();
-      });
-
-      searchList.appendChild(clone);
+    matches.forEach(task => {
+      const el = createTaskElement(task);
+      searchList.appendChild(el);
     });
-
-    searchResultsBlock.style.display = "block";
   });
 
-  document.addEventListener("click", (e) => {
-    const insideSearch = searchInput.contains(e.target) || searchResultsBlock.contains(e.target);
-    if (!insideSearch) {
-      searchResultsBlock.style.display = "none";
+  document.body.addEventListener("click", e => {
+    if (!searchResultsBox.contains(e.target) && e.target !== searchInput) {
+      searchResultsBox.style.display = "none";
     }
   });
 
-  document.getElementById("deleteSelected").addEventListener("click", () => {
-    const toDelete = getSelected();
-    if (toDelete.length === 0) return;
-    confirmAction("Supprimer les tâches sélectionnées ?", () => {
-      toDelete.forEach(task => {
-        task.classList.add("fade-out");
-        setTimeout(() => task.remove(), 300);
+  // Action groupée
+  function getSelectedTasks() {
+    return tasks.filter(t =>
+      document.querySelector(`.task-item input.select-checkbox[data-id="${t.id}"]`)?.checked
+    );
+  }
+
+  function confirmAndApply(actionName, filterFn, updateFn) {
+    const selected = [];
+    document.querySelectorAll(".select-checkbox:checked").forEach(cb => {
+      const name = cb.closest(".task-item").querySelector(".name").textContent;
+      selected.push(name);
+    });
+
+    if (!selected.length) return;
+
+    showConfirm(`Confirmer ${actionName} des tâches sélectionnées ?`, () => {
+      tasks = tasks.map(t => {
+        const match = document
+          .querySelectorAll(".select-checkbox:checked")
+          .some(cb => cb.closest(".task-item").querySelector(".name").textContent === t.name);
+        return match && filterFn(t) ? updateFn(t) : t;
       });
-      setTimeout(saveTasks, 350);
+      render();
     });
+  }
+
+  deleteBtn.addEventListener("click", () => {
+    confirmAndApply("la suppression", t => true, () => null);
+    tasks = tasks.filter(t =>
+      !document
+        .querySelectorAll(".select-checkbox:checked")
+        .some(cb => cb.closest(".task-item").querySelector(".name").textContent === t.name)
+    );
+    render();
+    saveTasks();
   });
 
-  document.getElementById("archiveSelected").addEventListener("click", () => {
-    const selected = getSelected();
-    if (selected.length === 0) return;
-    confirmAction("Archiver les tâches sélectionnées ?", () => {
-      selected.forEach(task => taskSections.archive.appendChild(task));
-      updateVisibility();
-      saveTasks();
-    });
+  archiveBtn.addEventListener("click", () => {
+    confirmAndApply("l'archivage", t => !t.archived, t => ({ ...t, archived: true }));
   });
 
-  document.getElementById("unarchiveSelected").addEventListener("click", () => {
-    const selected = getSelected();
-    if (selected.length === 0) return;
-    confirmAction("Désarchiver les tâches sélectionnées ?", () => {
-      selected.forEach(task => {
-        const p = task.dataset.priority;
-        taskSections[p].appendChild(task);
+  unarchiveBtn.addEventListener("click", () => {
+    confirmAndApply("la désarchivage", t => t.archived, t => ({ ...t, archived: false }));
+  });
+
+  // Appliquer un data-id pour sélection future
+  function updateCheckboxIDs() {
+    tasks.forEach(t => {
+      const els = document.querySelectorAll(".task-item");
+      els.forEach(el => {
+        if (
+          el.querySelector(".name")?.textContent === t.name &&
+          el.querySelector(".date")?.textContent === t.date
+        ) {
+          const cb = el.querySelector(".select-checkbox");
+          if (cb) cb.setAttribute("data-id", t.id);
+        }
       });
-      updateVisibility();
-      saveTasks();
     });
-  });
+  }
 
-  document.addEventListener("change", e => {
-    if (e.target.matches(".done-checkbox")) {
-      updateTaskStyle(e.target);
-    }
-  });
+  // À chaque rendu, on met à jour les id
+  const observer = new MutationObserver(() => updateCheckboxIDs());
+  observer.observe(document.body, { childList: true, subtree: true });
 
-  loadTasks();
-  updateVisibility();
+  // Initialisation
+  render();
 });
